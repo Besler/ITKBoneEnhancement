@@ -1,0 +1,425 @@
+%
+% Complete documentation on the extended LaTeX markup used for Insight
+% documentation is available in ``Documenting Insight'', which is part
+% of the standard documentation for Insight.  It may be found online
+% at:
+%
+%     http://www.itk.org/
+
+\documentclass{InsightArticle}
+
+
+\usepackage[utf8]{inputenc}
+\usepackage[dvips]{graphicx}
+\usepackage{color}
+\usepackage{minted}
+\definecolor{ltgray}{rgb}{0.93,0.93,0.93}
+\usemintedstyle{emacs}
+\usepackage{enumitem}
+\usepackage{amssymb}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  hyperref should be the last package to be loaded.
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[dvips,
+bookmarks,
+bookmarksopen,
+backref,
+colorlinks,linkcolor={blue},citecolor={blue},urlcolor={blue},
+]{hyperref}
+
+\newcommand{\absmax}{\mathrm{abs}\!\max} % AlfC
+
+%  This is a template for Papers to the Insight Journal.
+%  It is comparable to a technical report format.
+
+% The title should be descriptive enough for people to be able to find
+% the relevant document.
+\title{Multiscale Bone Enhancement Filtering}
+
+%
+% NOTE: This is the last number of the "handle" URL that
+% The Insight Journal assigns to your paper as part of the
+% submission process. Please replace the number "1338" with
+% the actual handle number that you get assigned.
+%
+% TODO
+%
+\newcommand{\IJhandlerIDnumber}{0000}
+
+% Increment the release number whenever significant changes are made.
+% The author and/or editor can define 'significant' however they like.
+\release{0.00}
+
+% At minimum, give your name and an email address.  You can include a
+% snail-mail address if you like.
+\author{Bryce A. Besler$^{1}$, Thomas Fitze$^{2}$, Matthew McCormick$^{3}$, Yves Pauchard$^{1}$, Nils D. Forkert$^{1}$, and Steven K. Boyd$^{1}$}
+\authoraddress{$^{1}$University of Calgary, Calgary, Canada\\
+               $^{2}$TODO\\
+               $^{3}$Kitware Inc., Carrboro, NC}
+\begin{document}
+
+%
+% Add hyperlink to the web location and license of the paper.
+% The argument of this command is the handler identifier given
+% by the Insight Journal to this paper.
+%
+\IJhandlefooter{\IJhandlerIDnumber}
+
+
+\ifpdf
+\else
+   %
+   % Commands for including Graphics when using latex
+   %
+   \DeclareGraphicsExtensions{.eps,.jpg,.gif,.tiff,.bmp,.png}
+   \DeclareGraphicsRule{.jpg}{eps}{.jpg.bb}{`convert #1 eps:-}
+   \DeclareGraphicsRule{.gif}{eps}{.gif.bb}{`convert #1 eps:-}
+   \DeclareGraphicsRule{.tiff}{eps}{.tiff.bb}{`convert #1 eps:-}
+   \DeclareGraphicsRule{.bmp}{eps}{.bmp.bb}{`convert #1 eps:-}
+   \DeclareGraphicsRule{.png}{eps}{.png.bb}{`convert #1 eps:-}
+\fi
+
+\maketitle
+
+
+\ifhtml
+\chapter*{Front Matter\label{front}}
+\fi
+
+
+% The abstract should be a paragraph or two long, and describe the
+% scope of the document.
+\begin{abstract}
+\noindent
+A framework for Hessian-based scale space filtering of medical image data is presented.
+The framework is general, has a low memory footprint, and can easily be extended to new Hessian-based filters.
+The framework is applied to multiscale bone enhancement filtering.
+Two existing methods of bone enhancement filtering are implemented.
+
+\end{abstract}
+
+\IJhandlenote{\IJhandlerIDnumber}
+
+\tableofcontents
+\newpage
+\section{Introduction}
+\label{sec:intro}
+How do visual systems (human or otherwise) perceive their environment?
+It has long been believed that edge detection is fundamental to visual processing through the primal sketch~\cite{marr1980theory}.
+The computer vision community has worked vigorously to develop well-defined methods of edge detection in the hopes of producing an electromechanical visual system.
+First, it was shown that a first-derivative Gaussin kernel was approximately optimal for detecting edges at a single scale~\cite{Canny1986}.
+Optimal was defined as an edge detector which had the following properties:
+
+\begin{description}[style=multiline,labelindent=1cm,leftmargin=5cm]
+  \item[Good Detection] Edges are not missed and spurious edges are not added.
+  \item[Good Localization] Distance between detected edge and the true edge center is minimum.
+  \item[One Response] A single edge does not give rise to multiple responses.
+\end{description}
+
+This discusion was extended for responses at multiple scales, aligning edge detection with years of work on scale-space theory.
+
+In scale-space theory, details of an image are captured in a fine-to-coarse manner.
+This is acheived by convolving the image with some smoothing kernel controlled by a single parameter that determines the degree of smoothing.
+However, some smoothing kernels can introduce additional zero crossing not present in the original image.
+The Gaussian kernel is the only kernel of many to statisfy this property~\cite{Babaud86}.
+Scale-space was extended for discrete signals~\cite{lindeberg1990scale} and automatic scale selection~\cite{lindeberg1998feature}.
+
+Scale-space methods worked their way into the medical image computing community.
+Frangi~\emph{et. al} and colleagues suggested that the eigenvalues of the local Hessian of an image were distinct to the tubular structure of blood vessels.
+A probabilistic approach was developed to enhance blood vessels in magnetic resonance angiography from their local Hessian~\cite{frangi1998multiscale}.
+Furthermore, the second derivatives required for the Hessian matrix could be computed in a well-posed fashion using differentiated Gaussians.
+The zero-crossings of the Gaussian correspond exactly to the standard deviation of the Gaussian kernel.
+A measure of local-structure founded in scale-space theory presented a novel method of enhancing tubular images.
+
+Eventually, local-structure based measures moved beyond vessels to bones.
+Locally, cortical bone appears as a sheet-like structure having a distinct set of eigenvalues.
+Descoteaux~\emph{et. al} developed a method of enhancing the thin bones of the sinus~\cite{descoteaux2006bone}.
+Kr{\v{c}}ah~\emph{et. al} extended this method for enhancing the cortical bone and joint space of long bones~\cite{krvcah2011fully}.
+Bone enhancement filtering based on local structure is in it's infancy with a strong potential for automatic segmentation of bony structures in computed tomography.
+
+An implementaiton of multiscale bone enhancement filtering is presented in this paper.
+The implementation balances memory efficiency and speed for the computationally demanding filters.
+Processing time and memory can be increased by restricting the processing volume to the object of interest.
+A general framework is presented where other local-structure based filters can be implemented.
+Two existing methods of cortical bone enhancment are implemented.
+
+\newpage
+\section{Nomenclature}
+\label{sec:nomenclature}
+Ignoring discretization, we define a greyscale image $I$ of dimension $D$ as a mapping from the real domain to the real line $I: \mathbb{R}^D \rightarrow \mathbb{R}$.
+The scale-space representation of the image is parameterized by the variance of the Gaussian filter $t = \sigma^2$.
+
+\begin{equation}
+  L\left(x; t\right) = t^\gamma \cdot I\left(x\right) * G\left(x; t\right)
+  \label{eqn:scale_space}
+\end{equation}
+
+where $x \in \mathbb{R}^D$ and $G\left(x; t\right)$ is the Gaussian filter.
+
+The Hessian-image $H: \mathbb{R}^D \rightarrow \mathbb{R}^{DxD}$ defines an image where each voxel contains a matrix of size $ D x D$.
+The matrix at index $(i,j)$ gives the derivative of the image with respect to the $i^{th}$ and $j^{th}$ oriented directions.
+\begin{equation}
+  H_{i,j}(x) = \frac{\partial^2}{\partial x_i \partial x_j} I\left(x\right)
+  \label{eqn:hessian}
+\end{equation}
+The Eigen-image $\Lambda: \mathbb{R}^D \rightarrow \mathbb{R}^{D}$ defines an image where each voxel contains a column vector of eigenvalues of size $D x 1$.
+For images which are twice differentiable on their domain, the Hessian matrix is symmetric.
+That is, $H_{i,j} = H_{j,i}$.
+For a symmetric matirx, the eigenvectors are orthogonal and the eigenvalues are real.
+
+We now define a family of Hessian-images and Eigen-images defined over the scale-space representation of the image, $H_t$ and $\Lambda_t$.
+At each scale $t \in \Sigma$, we define a measure image at scale $t$ as $M_t: \mathbb{R}^D \rightarrow \mathbb{R}$.
+Here, $\Sigma$ is a finite list of scales over which to compute the response.
+Because the convolution operator is linear, $H_t$ can be computed in a well-posed by convolution of the image with differentiated Gaussians.
+\begin{equation}
+  H_{t,i,j}(x) = I\left(x\right) * \frac{\partial^2}{\partial x_i \partial x_j} G\left(x; t\right)
+  \label{eqn:hessian}
+\end{equation}
+With the scale space implementation, every element of the Hessian $H_{t,i,j}$ can be seen as an oriented, weighted difference between the voxels inside and outside $|x| < 2t$~\cite{frangi1998multiscale}.
+
+The measure-image at a voxel depends only on the Eigen-image at the same voxel and scale as well as a set of parameters defined over the entire Eigen-image: $M_t(x) = f\left(\Lambda_t | \Theta_t\right)$.
+Without loss of generality, we can define a final measure-image $M: \mathbb{R}^D \rightarrow \mathbb{R}$ by taking the pixel with the maximum absolute value across all scales.
+\begin{equation}
+  M(x) = \absmax_{t \in \Sigma} M_t(x)
+  \label{eqn:abs_max_measure}
+\end{equation}
+
+where $\absmax$ takes the value which is largest in an absolute value sense.
+\begin{equation}
+  \absmax(x, y) = \begin{cases}
+    x, & \text{if }|x| > |y|.\\
+    y, & \text{otherwise}.
+  \end{cases}
+  \label{eqn:abs_max}
+\end{equation}
+
+Altogether, multiscale enhancement can be broken down into the following set of equations defined for each image:
+\begin{equation}
+  H_{t,i,j} = t^\gamma \cdot I\left(x\right) * \frac{\partial^2}{\partial x_i \partial x_j} G\left(x; t\right) \\
+  \label{eqn:hess}
+\end{equation}
+
+\begin{equation}
+  \Lambda_t = \textrm{EigenAnalysis }\left(H_t\right)
+  \label{eqn:eig}
+\end{equation}
+
+\begin{equation}
+  \Theta_t = \textrm{Eigenvalues to Parameter Estimation} \left(\Lambda_t\right)
+  \label{eqn:estimation}
+\end{equation}
+
+\begin{equation}
+  M_t = \textrm{Eigenvalues to Measure } \left(\Lambda_t | \: \Theta_t \right)
+  \label{eqn:measure}
+\end{equation}
+
+\begin{equation}
+  M(x) = \absmax_{t \in \Sigma} M_t(x)
+  \label{eqn:over_scale}
+\end{equation}
+
+Described here on out is an efficient implementation to go from $I$ to $M$.
+
+\section{Design}
+\label{sec:design}
+
+\begin{figure}
+  \center
+  \includegraphics[width=1.0\textwidth]{figures/MultiScaleHessianEnhancementImageFilter.eps}
+  \itkcaption[itk::MultiScaleHessianEnhancementImageFilterComponents]{The pipeline of compositional filter \code{itk::MultiScaleHessianEnhancementImageFilter}}
+  \label{fig:MultiScaleHessianEnhancementImageFilter}
+\end{figure}
+
+\subsection{Composition over Scales}
+\label{design:MultiScaleHessianEnhancementImageFilter}
+A compositional filter \code{itk::MultiScaleHessianEnhancementImageFilter} is used to handle the complex processing.
+The flow of image data through the filter is outlined in Figure~\ref{fig:MultiScaleHessianEnhancementImageFilter}.
+Internally, this filter computes the response image $M_t$ across all scales $t \in \Sigma$ combining the responses with \code{itk::MaximumAbsoluteValueImageFilter}.
+\code{itk::MaximumAbsoluteValueImageFilter} takes the maximum response over all scales.
+For reasons that will become obvious later, \code{itk::MaximumAbsoluteValueImageFilter} is a 
+general implementaion of \textit{maximum response over scales} as defined in Equation~\ref{eqn:abs_max}.
+Due to the need to estimate parameters over all pixels, \code{itk::MultiScaleHessianEnhancementImageFilter} is not streamable.
+
+\subsection{Eigen Analysis}
+\label{design:eigenanalysis}
+Internally, the existing filter \code{itk::SymmetricEigenAnalysisImageFilter} is used to compute the Eigen-image from the Hessian-Image.
+Special attention is placed on \code{itk::HessianGaussianImageFilter} since it is a major bottleneck of speed and memory for the algorithm.
+This discussion is reserved for section~\ref{filter:HessianGaussianImageFilter}.
+Classes \code{itk::EigenToScalarParameterEstimationImageFilter} and \code{itk::EigenToScalarMeasureImageFilter} are abstract classes which are implemented per-algorithm.
+Special attention should be paid to filter \code{itk::EigenToScalarParameterEstimationImageFilter} since parameter estimation happens across all voxels in the image.
+This is a particularly important bottelneck for memory which is discussed in Section~\ref{filter:EigenToScalarParameterEstimationImageFilter}.
+
+The compositional filter \code{itk::MultiScaleHessianEnhancementImageFilter} has the following inputs:
+\begin{description}[style=multiline,labelindent=1cm,leftmargin=5cm]
+  \item[Image] \hfill \\ The input image, $I$.
+  \item[Mask] \hfill \\ (Optional) A binary image used to restrict the domain increasing speed and decreasing peack memory requirements.
+  \item[\code{itk::EigenToScalarParameterEstimationImageFilter}] \hfill \\ The algorithm-specific method of estimating parameters.
+  \item[\code{itk::EigenToScalarMeasureImageFilter}] \hfill \\ The algorithm-specific Eigen-image to measure-image filter.
+  \item[$\Sigma$] \hfill \\ The vector of standard deviations to be processed.
+\end{description}
+\code{itk::MultiScaleHessianEnhancementImageFilter} is designed for N-dimensional images.
+However, each implementation of the \code{itk::EigenToScalar*} filters is restricted to a specific dimension inherent to the dimensionality of the object the algorithm is attempting to implement.
+
+\section{Filter Implementation}
+\label{sec:filter_implementation}
+
+\subsection{itk::MultiScaleHessianEnhancementImageFilter}
+\label{filter:MultiScaleHessianEnhancementImageFilter}
+TODO
+
+\subsection{itk::HessianGaussianImageFilter}
+\label{filter:HessianGaussianImageFilter}
+For an image of $N$ voxels with dimension $D$, a general finite impulse response (FIR) kernel of size $K^D$ can be implemented in $O(NK^D)$.
+Seperable kernels are implementable in $O(NKD)$.
+For comparison, implementing convolution with the Fast Fourier Transform algorithm runs in $O(N \log N)$ which is faster (ignoring constants) than seperable filters if $\log N < KD$.
+
+It is well known that Gaussian kernels are seperable and can take advantage of the property of seperability to increase their speed.
+Furthermore, Gaussian kernels have been well characterized and inifite impulse response (IIR) implementations have been developed~\cite{Deriche1993}.
+IIR filters greatly reduce the value of $K$, but cannot be streamed.
+This is because the output of an IIR filter depends on the current pixel and the \textit{output} of the previous pixel in the image.
+This relationship cascades from one corner of the image to the other.
+
+An implementation of \code{itk::HessianGaussianImageFilter} exists using IIR filters (see \code{itk::HessianRecursiveGaussianImageFilter}).
+The IIR implementation requires the entire Hessian-image to be put in memory greatly increasing peak memory used by the image processing pipeline.
+Instead, \code{itk::HessianGaussianImageFilter} was implemented using FIR filters as a streamable alternative to \code{itk::HessianRecursiveGaussianImageFilter}.
+
+The FIR filter \code{itk::DiscreteGaussianDerivativeImageFilter} was used to generate the elements of the Hessian matrix.
+This implementation uses Bessel functions to generate the derivated Gaussian kernel as is optimal for discrete images~\cite{lindeberg1990scale}.
+Futher implementation details are available elsewhere~\cite{macia2007generalized}.
+Although \code{itk::HessianGaussianImageFilter} is streamable, it has a receptive field that is larger than $1$ which can increase the processed image region of upstream filters.
+A \code{itk::NthElementImageAdaptor} is used to accumulate each element of the Hessian matrix.
+Since the Hessian-matrix is symmetric, only the diagonal and half of the off-diagnoal elements needed to be computed.
+For a $DxD$ Hessian matrix, $\frac{D(D+1)}{2}$ Gaussian convolutions need to be computed.
+
+\subsection{itk::MaximumAbsoluteValueImageFilter}
+\label{filter:MaximumAbsoluteValueImageFilter}
+The filter \code{itk::MaximumAbsoluteValueImageFilter} implements Equation~\ref{eqn:abs_max} on a voxel-by-voxel level between two images.
+A \code{Functor} is created which implements the voxel-by-voxel comparison.
+This functor is used with \code{itk::BinaryFunctorImageFilter} to implement the image filter.
+If only one scale is supplied to \code{itk::MultiScaleHessianEnhancementImageFilter}, this filter is not used.
+However, if two scales are supplied, this filter is connected to the pipeline twice.
+If more than two scales are used, the internal pipeline is reconnected to the second input for the $3^{rd}$, $4^{th}$, and so one scale.
+
+\subsection{itk::EigenToScalarParameterEstimationImageFilter}
+\label{filter:EigenToScalarParameterEstimationImageFilter}
+
+
+\subsection{itk::EigenToScalarMeasureImageFilter}
+\label{filter:EigenToScalarMeasureImageFilter}
+
+
+\subsection{Descoteaux Bone Enhancement Filtering}
+\label{subsec:descoteaux}
+
+
+
+
+\subsection{Kr{\v{c}}ah Bone Enhancement Filtering}
+\label{subsec:descoteaux}
+
+
+
+\section{Results}
+\label{sec:results}
+
+
+
+\section{Conclusion}
+\label{sec:conclusions}
+
+\section*{Acknowledgements}
+
+
+
+% \begin{minted}[baselinestretch=1,fontsize=\footnotesize,linenos=false,bgcolor=ltgray]{cpp}
+% typedef itk::Image< unsigned char, 3 > ImageType;
+
+% ImageType::Pointer image = ImageType::New();
+% \end{minted}
+% \doxygen{ImageToImageFilter}
+% \code{SetNumberOfIterations()}
+
+
+\appendix
+
+\section{Python Packages}
+\label{sec:python_packages}
+All filters were wrapped in Python.
+TODO
+
+\section{Examples}
+\label{sec:examples}
+Examples are given in Python and C++.
+TODO.
+
+% \section{This is an Appendix}
+
+% To create an appendix in a Insight HOWTO document, use markup like
+% this:
+
+% \begin{verbatim}
+% \appendix
+
+% \section{This is an Appendix}
+
+% To create an appendix in a Insight HOWTO document, ....
+
+
+% \section{This is another}
+
+% Just add another \section{}, but don't say \appendix again.
+% \end{verbatim}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Example on how to insert a figure
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% \begin{figure}
+% \center
+% \includegraphics[width=0.8\textwidth]{RegistrationComponentsDiagram.eps}
+% \itkcaption[Registration Framework Components]{The basic components of the
+% registration framework are two input images, a transform, a metric, an
+% interpolator and an optimizer.}
+% \label{fig:RegistrationComponents}
+% \end{figure}
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Example on how to insert an equation.
+%  Never forget to put an equation in your paper.
+%  They make them look professional and impress the reviewers.
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+% To support shape-guidance, the generic level set equation
+% (Eqn(~\ref{eqn:ShapeInfluenceTerm})) is extended to incorporate a shape guidance
+% term:
+
+% \begin{equation}
+% \label{eqn:ShapeInfluenceTerm}
+% \xi \left(\psi^{*}(\mathbf{x}) - \psi(\mathbf{x})\right)
+% \end{equation}
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Insert the bibliography using BibTeX
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\bibliographystyle{plain}
+\bibliography{InsightJournal}
+
+\end{document}
